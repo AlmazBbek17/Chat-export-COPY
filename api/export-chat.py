@@ -837,7 +837,7 @@ class handler(BaseHTTPRequestHandler):
         return datetime.now().strftime('%d.%m.%Y %H:%M')
 
 
-
+of
 
 
 
