@@ -790,4 +790,3 @@ class handler(BaseHTTPRequestHandler):
     def _date(self):
         from datetime import datetime
         return datetime.now().strftime('%d.%m.%Y %H:%M')
-
