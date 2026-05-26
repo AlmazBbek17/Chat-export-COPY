@@ -29,6 +29,7 @@ def make_run(text, italic=True, bold=False):
     else:
         sty = sub_el(rpr, MATH_NS, 'sty')
         sty.set(f'{{{MATH_NS}}}val', 'bi' if bold else 'i')
+    # Word run properties for font
     wrpr = sub_el(r, W_NS, 'rPr')
     rfonts = sub_el(wrpr, W_NS, 'rFonts')
     rfonts.set(f'{{{W_NS}}}ascii', 'Cambria Math')
@@ -39,6 +40,7 @@ def make_run(text, italic=True, bold=False):
     return r
 
 def make_text_run(text):
+    """Для \text{} — прямой (не курсивный) текст"""
     return make_run(text, italic=False, bold=False)
 
 def make_frac(num_elements, den_elements):
@@ -75,6 +77,7 @@ def make_sub_el(base_elements, sub_elements):
     return ssub
 
 def make_subsup(base_elements, sub_elements, sup_elements):
+    """Одновременно нижний и верхний индекс"""
     ssubsup = make_el(MATH_NS, 'sSubSup')
     e = sub_el(ssubsup, MATH_NS, 'e')
     for el in base_elements:
@@ -125,6 +128,7 @@ def make_delim(content_elements, beg='(', end=')'):
     return d
 
 def make_func(func_name, arg_elements):
+    """Создаёт функцию типа ln, sin, cos, log"""
     func = make_el(MATH_NS, 'func')
     funcpr = sub_el(func, MATH_NS, 'funcPr')
     fname = sub_el(func, MATH_NS, 'fName')
@@ -135,6 +139,7 @@ def make_func(func_name, arg_elements):
     return func
 
 def make_nary(symbol, sub_els=None, sup_els=None, content_els=None):
+    """Создаёт большой оператор (сумма, интеграл, произведение)"""
     nary = make_el(MATH_NS, 'nary')
     narypr = sub_el(nary, MATH_NS, 'naryPr')
     ch = sub_el(narypr, MATH_NS, 'chr')
@@ -226,11 +231,12 @@ def parse_latex(latex):
         if c == '\\':
             j = i + 1
             if j < len(s) and not s[j].isalpha():
+                # Спецсимволы типа \, \; \! \  и т.д.
                 special = s[i:j+1]
                 if special in (r'\ ', r'\,', r'\;', r'\!', r'\:'):
                     elements.append(make_run(' ', italic=False))
                 elif special == r'\\':
-                    pass
+                    pass  # line break, skip
                 else:
                     elements.append(make_run(s[j], italic=False))
                 i = j + 1
@@ -240,6 +246,7 @@ def parse_latex(latex):
                 j += 1
             cmd = s[i:j]
             
+            # \frac
             if cmd == r'\frac':
                 num_c, after_n = _read_group(s, j)
                 den_c, after_d = _read_group(s, after_n)
@@ -249,6 +256,7 @@ def parse_latex(latex):
                 i = after_d
                 continue
             
+            # \text, \mathrm, \textbf, \textrm
             if cmd in (r'\text', r'\mathrm', r'\textrm', r'\textbf', r'\operatorname'):
                 content, after = _read_group(s, j)
                 bold = (cmd == r'\textbf')
@@ -256,6 +264,7 @@ def parse_latex(latex):
                 i = after
                 continue
             
+            # \hat, \vec, \bar, \tilde, \dot, \ddot
             accents_map = {
                 r'\hat': '\u0302', r'\vec': '\u20D7', r'\bar': '\u0305',
                 r'\tilde': '\u0303', r'\dot': '\u0307', r'\ddot': '\u0308',
@@ -269,7 +278,9 @@ def parse_latex(latex):
                 i = after
                 continue
             
+            # \sqrt
             if cmd == r'\sqrt':
+                # Проверяем необязательный аргумент [n]
                 deg_els = None
                 pos = j
                 while pos < len(s) and s[pos] == ' ':
@@ -286,13 +297,14 @@ def parse_latex(latex):
                 i = after
                 continue
             
+            # \left \right
             if cmd == r'\left':
                 beg_char = s[j] if j < len(s) else '('
                 if beg_char == '.': beg_char = ''
                 right_pos = _find_matching_right(s, j+1)
                 if right_pos >= 0:
                     inner = s[j+1:right_pos]
-                    end_pos = right_pos + 6
+                    end_pos = right_pos + 6  # len(\right)
                     end_char = s[end_pos] if end_pos < len(s) else ')'
                     if end_char == '.': end_char = ''
                     inner_els = parse_latex(inner) or [make_run(' ')]
@@ -307,15 +319,19 @@ def parse_latex(latex):
                 i = j + 1
                 continue
             
+            # Функции (sin, cos, ln, log, lim, etc)
             if cmd in FUNCTIONS:
-                func_name = cmd[1:]
+                func_name = cmd[1:]  # убираем \
+                # Проверяем есть ли аргумент в скобках или {}
                 pos = j
                 while pos < len(s) and s[pos] == ' ':
                     pos += 1
+                # Просто вставляем как не-курсивный текст
                 elements.append(make_run(func_name, italic=False))
                 i = j
                 continue
             
+            # \sum, \prod, \int с пределами
             nary_map = {r'\sum': '∑', r'\prod': '∏', r'\int': '∫',
                         r'\iint': '∬', r'\iiint': '∭', r'\oint': '∮'}
             if cmd in nary_map:
@@ -323,16 +339,19 @@ def parse_latex(latex):
                 i = j
                 continue
             
+            # Греческие буквы
             if cmd in GREEK:
                 elements.append(make_run(GREEK[cmd], italic=True))
                 i = j
                 continue
             
+            # Символы
             if cmd in SYMBOLS:
                 elements.append(make_run(SYMBOLS[cmd], italic=False))
                 i = j
                 continue
             
+            # \mathbf, \mathbb, \mathcal
             if cmd in (r'\mathbf', r'\mathbb', r'\mathcal', r'\boldsymbol'):
                 content, after = _read_group(s, j)
                 is_bold = cmd in (r'\mathbf', r'\boldsymbol')
@@ -340,15 +359,18 @@ def parse_latex(latex):
                 i = after
                 continue
             
+            # Неизвестная команда
             elements.append(make_run(cmd[1:], italic=False))
             i = j
             continue
         
+        # ^ верхний индекс
         if c == '^':
             sup_c, after = _read_group_or_char(s, i+1)
             sup_els = parse_latex(sup_c) or [make_run(' ')]
             if elements:
                 base = elements.pop()
+                # Проверяем: если дальше идёт _, то это subsup
                 if after < len(s) and s[after] == '_':
                     sub_c, after2 = _read_group_or_char(s, after+1)
                     sub_els2 = parse_latex(sub_c) or [make_run(' ')]
@@ -362,11 +384,13 @@ def parse_latex(latex):
                 i = after
             continue
         
+        # _ нижний индекс
         if c == '_':
             sub_c, after = _read_group_or_char(s, i+1)
             sub_els = parse_latex(sub_c) or [make_run(' ')]
             if elements:
                 base = elements.pop()
+                # Проверяем: если дальше идёт ^, то это subsup
                 if after < len(s) and s[after] == '^':
                     sup_c2, after2 = _read_group_or_char(s, after+1)
                     sup_els2 = parse_latex(sup_c2) or [make_run(' ')]
@@ -380,6 +404,7 @@ def parse_latex(latex):
                 i = after
             continue
         
+        # Обычные символы
         text = ''
         while i < len(s) and s[i] not in '\\{}^_$ \t':
             ch = s[i]
@@ -407,6 +432,7 @@ def parse_latex(latex):
 
 
 def _find_matching_right(s, start):
+    """Ищет \right соответствующую \left"""
     depth = 1
     i = start
     while i < len(s) - 5:
@@ -510,15 +536,19 @@ class handler(BaseHTTPRequestHandler):
         test = 'not tested'
         tests = {}
         try:
+            # Тест 1: простая дробь
             omath = build_omath(r'\frac{a}{b}')
             tests['frac'] = f'OK ({len(list(omath))} children)'
             
+            # Тест 2: text
             omath2 = build_omath(r'V = \text{const}')
             tests['text'] = f'OK ({len(list(omath2))} children)'
             
+            # Тест 3: греческие + Delta
             omath3 = build_omath(r'A = P\Delta V')
             tests['greek'] = f'OK ({len(list(omath3))} children)'
             
+            # Тест 4: ln
             omath4 = build_omath(r'\nu RT \ln(V_2/V_1)')
             tests['ln'] = f'OK ({len(list(omath4))} children)'
             
@@ -529,7 +559,7 @@ class handler(BaseHTTPRequestHandler):
         
         r = json.dumps({
             'status': 'OK',
-            'version': '5.1-image-grid',
+            'version': '5.0-full-parser',
             'math_test': test,
             'tests': tests
         })
@@ -603,35 +633,10 @@ class handler(BaseHTTPRequestHandler):
         while i < len(lines):
             line = lines[i]
             
-            # NEW: detect group of consecutive images → render as grid
-            img_match = re.search(r'!\[([^\]]*)\]\(([^\)]+)\)', line)
-            if img_match:
-                image_group = []
-                j = i
-                while j < len(lines):
-                    ln = lines[j]
-                    m = re.search(r'!\[([^\]]*)\]\(([^\)]+)\)', ln)
-                    if m:
-                        image_group.append({'alt': m.group(1), 'src': m.group(2)})
-                        j += 1
-                    elif ln.strip() == '':
-                        # blank line — check if next non-blank is also image
-                        k = j + 1
-                        while k < len(lines) and lines[k].strip() == '':
-                            k += 1
-                        if k < len(lines) and re.search(r'!\[([^\]]*)\]\(([^\)]+)\)', lines[k]):
-                            j = k
-                        else:
-                            break
-                    else:
-                        break
-                
-                if len(image_group) == 1:
-                    self._img(doc, image_group[0]['src'], image_group[0]['alt'])
-                    i = j
-                else:
-                    self._image_grid(doc, image_group)
-                    i = j
+            img = re.search(r'!\[([^\]]*)\]\(([^\)]+)\)', line)
+            if img:
+                self._img(doc, img.group(2), img.group(1))
+                i += 1
                 continue
             
             if line.strip().startswith('```'):
@@ -644,6 +649,7 @@ class handler(BaseHTTPRequestHandler):
                 i += 1
                 continue
             
+            # Таблицы
             if '|' in line and line.strip().startswith('|'):
                 tlines = []
                 while i < len(lines) and '|' in lines[i]:
@@ -693,12 +699,14 @@ class handler(BaseHTTPRequestHandler):
                 insert_math(p, part.strip())
 
     def _add_cell_content_with_math(self, cell, text):
+        """Добавляет текст с формулами в ячейку таблицы"""
         text = text.strip()
         parts = re.split(r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)', text)
         
         para = cell.paragraphs[0]
         
         if len(parts) <= 1:
+            # Нет формул
             run = para.add_run(text)
             run.font.size = Pt(11)
             return
@@ -712,6 +720,7 @@ class handler(BaseHTTPRequestHandler):
                 insert_math(para, part.strip())
 
     def _table_with_math(self, doc, tlines):
+        """Таблица с поддержкой формул в ячейках"""
         rows = []
         for l in tlines:
             cells = [c.strip() for c in l.split('|')]
@@ -773,62 +782,10 @@ class handler(BaseHTTPRequestHandler):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.add_run().add_picture(stream, width=Inches(5.0))
-        except Exception as e:
-            print(f'Image error: {e}')
+        except:
             p = doc.add_paragraph()
             r = p.add_run(f'[Image: {alt}]')
             r.italic = True
-
-    # NEW: render multiple images as a 2-column grid (borderless table)
-    def _image_grid(self, doc, images):
-        import urllib.request, base64
-        
-        cols = 2
-        rows = (len(images) + cols - 1) // cols
-        
-        table = doc.add_table(rows=rows, cols=cols)
-        table.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Remove all borders
-        tbl = table._element
-        tblPr = tbl.find(qn('w:tblPr'))
-        if tblPr is None:
-            tblPr = OxmlElement('w:tblPr')
-            tbl.insert(0, tblPr)
-        tblBorders = OxmlElement('w:tblBorders')
-        for border_name in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
-            b = OxmlElement(f'w:{border_name}')
-            b.set(qn('w:val'), 'nil')
-            tblBorders.append(b)
-        tblPr.append(tblBorders)
-        
-        img_width = Inches(2.8)
-        
-        for idx, img_info in enumerate(images):
-            row = idx // cols
-            col = idx % cols
-            cell = table.rows[row].cells[col]
-            p = cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            src = img_info['src']
-            alt = img_info['alt']
-            
-            try:
-                if src.startswith('data:image'):
-                    b64 = src.split('base64,')[1]
-                    stream = io.BytesIO(base64.b64decode(b64))
-                else:
-                    req = urllib.request.Request(src, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        stream = io.BytesIO(resp.read())
-                p.add_run().add_picture(stream, width=img_width)
-            except Exception as e:
-                print(f'Grid image error: {e}')
-                r = p.add_run(f'[Image: {alt}]')
-                r.italic = True
-        
-        doc.add_paragraph()
 
     def _date(self):
         from datetime import datetime
