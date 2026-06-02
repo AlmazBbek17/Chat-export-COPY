@@ -790,3 +790,25 @@ class handler(BaseHTTPRequestHandler):
     def _date(self):
         from datetime import datetime
         return datetime.now().strftime('%d.%m.%Y %H:%M')
+
+if __name__ == '__main__':
+    from http.server import HTTPServer
+    import os
+    
+    # Railway автоматически передает порт, на котором должен работать сервер,
+    # через переменную окружения PORT. Если её нет, используем 8080.
+    port = int(os.environ.get('PORT', 8080))
+    
+    # На Railway обязательно нужно привязываться к адресу '0.0.0.0',
+    # чтобы сервер принимал внешние запросы (интернет-трафик), а не только локальные.
+    server_address = ('0.0.0.0', port)
+    
+    httpd = HTTPServer(server_address, handler)
+    print(f"Сервер успешно запущен на порту {port}...")
+    
+    try:
+        # Запускаем бесконечный цикл обработки запросов
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nСервер остановлен.")
+        httpd.server_close()
